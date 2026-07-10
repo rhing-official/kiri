@@ -70,29 +70,31 @@ Future<String?> takeScreenshot({
   return result.exitCode == 0 ? path : null;
 }
 
+// 固定シーケンス設定（書籍撮影を想定：撮影→待機→ページめくり）
+const _fixedWaitMs = 300;
+const _fixedSendKey = 'Left';
+
 // ─────────────────────────────────────────
 //  連続撮影シーケンス（screenshot → wait → key を repeat 回）
 // ─────────────────────────────────────────
 Future<void> runCaptureSequence({
   required int repeat,
-  required int waitMs,
-  required String sendKey,
   required bool Function() isCancelled,
   VoidCallback? onHide,
   VoidCallback? onShow,
-  void Function(int index, String? path)? onShot,
+  void Function(int index)? onShot,
 }) async {
   for (var i = 0; i < repeat; i++) {
     if (isCancelled()) return;
 
-    final path = await takeScreenshot(onHide: onHide, onShow: onShow);
-    onShot?.call(i + 1, path);
+    await takeScreenshot(onHide: onHide, onShow: onShow);
+    onShot?.call(i + 1);
 
     if (isCancelled()) return;
-    await Future.delayed(Duration(milliseconds: waitMs));
+    await Future.delayed(const Duration(milliseconds: _fixedWaitMs));
 
     if (isCancelled()) return;
-    await Process.run('ydotool', ['key', sendKey]);
+    await Process.run('ydotool', ['key', _fixedSendKey]);
   }
 }
 
@@ -119,9 +121,6 @@ class KiriApp extends StatelessWidget {
   }
 }
 
-// 使用可能な送信キー（ページめくり用途を想定）
-const _availableKeys = ['Left', 'Right', 'space', 'Page_Down', 'Page_Up'];
-
 // ─────────────────────────────────────────
 //  メイン画面（連続撮影）
 // ─────────────────────────────────────────
@@ -134,13 +133,10 @@ class CaptureScreen extends StatefulWidget {
 
 class _CaptureScreenState extends State<CaptureScreen> {
   int _repeat = 100;
-  int _waitMs = 300;
-  String _sendKey = _availableKeys.first;
 
   bool _running = false;
   bool _cancelRequested = false;
   int _progress = 0;
-  String? _lastShotPath;
 
   void _hide() => windowManager.minimize();
 
@@ -159,17 +155,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
     await runCaptureSequence(
       repeat: _repeat,
-      waitMs: _waitMs,
-      sendKey: _sendKey,
       isCancelled: () => _cancelRequested,
       onHide: _hide,
       onShow: _show,
-      onShot: (index, path) {
+      onShot: (index) {
         if (!mounted) return;
-        setState(() {
-          _progress = index;
-          if (path != null) _lastShotPath = path;
-        });
+        setState(() => _progress = index);
       },
     );
 
@@ -186,36 +177,22 @@ class _CaptureScreenState extends State<CaptureScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(child: _PreviewArea(path: _lastShotPath)),
-              const SizedBox(height: 16),
               if (_running)
-                Text(
-                  '$_progress / $_repeat 枚',
-                  style: const TextStyle(color: Colors.white70),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    '$_progress / $_repeat 枚',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
                 ),
-              const SizedBox(height: 8),
               _NumberStepper(
                 label: 'リピート回数',
                 value: _repeat,
                 min: 1,
                 enabled: !_running,
                 onChanged: (v) => setState(() => _repeat = v),
-              ),
-              const SizedBox(height: 8),
-              _NumberStepper(
-                label: '待機時間(ms)',
-                value: _waitMs,
-                min: 0,
-                step: 50,
-                enabled: !_running,
-                onChanged: (v) => setState(() => _waitMs = v),
-              ),
-              const SizedBox(height: 8),
-              _KeySelector(
-                value: _sendKey,
-                enabled: !_running,
-                onChanged: (v) => setState(() => _sendKey = v),
               ),
               const SizedBox(height: 16),
               Row(
@@ -245,43 +222,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
 }
 
 // ─────────────────────────────────────────
-//  画像プレビュー
-// ─────────────────────────────────────────
-class _PreviewArea extends StatelessWidget {
-  final String? path;
-
-  const _PreviewArea({required this.path});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF3A3A3A)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: path == null
-          ? const Center(
-              child: Text(
-                '画像プレビュー',
-                style: TextStyle(color: Colors.white24),
-              ),
-            )
-          : Image.file(File(path!), fit: BoxFit.contain),
-    );
-  }
-}
-
-// ─────────────────────────────────────────
 //  数値ステッパー（入力欄＋上下矢印）
 // ─────────────────────────────────────────
-class _NumberStepper extends StatelessWidget {
+class _NumberStepper extends StatefulWidget {
   final String label;
   final int value;
   final int min;
-  final int step;
   final bool enabled;
   final ValueChanged<int> onChanged;
 
@@ -290,36 +236,58 @@ class _NumberStepper extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.min = 0,
-    this.step = 1,
     this.enabled = true,
   });
 
+  @override
+  State<_NumberStepper> createState() => _NumberStepperState();
+}
+
+class _NumberStepperState extends State<_NumberStepper> {
+  late final _controller = TextEditingController(text: '${widget.value}');
+
+  @override
+  void didUpdateWidget(_NumberStepper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ('${widget.value}' != _controller.text) {
+      _controller.text = '${widget.value}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   void _set(int v) {
-    if (v < min) v = min;
-    onChanged(v);
+    if (v < widget.min) v = widget.min;
+    widget.onChanged(v);
   }
 
   @override
   Widget build(BuildContext context) {
     return Opacity(
-      opacity: enabled ? 1.0 : 0.4,
+      opacity: widget.enabled ? 1.0 : 0.4,
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Text(label, style: const TextStyle(color: Colors.white54)),
-          ),
+          Text(widget.label, style: const TextStyle(color: Colors.white54)),
+          const SizedBox(width: 12),
           SizedBox(
             width: 80,
             child: TextField(
-              key: ValueKey('$label-$value'),
-              enabled: enabled,
+              enabled: widget.enabled,
               textAlign: TextAlign.center,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               style: const TextStyle(color: Colors.white70),
-              controller: TextEditingController(text: '$value'),
+              controller: _controller,
               decoration: const InputDecoration(isDense: true),
-              onSubmitted: (text) => _set(int.tryParse(text) ?? value),
+              onChanged: (text) {
+                final v = int.tryParse(text);
+                if (v != null) _set(v);
+              },
             ),
           ),
           Column(
@@ -328,58 +296,16 @@ class _NumberStepper extends StatelessWidget {
               IconButton(
                 iconSize: 18,
                 color: Colors.white54,
-                onPressed: enabled ? () => _set(value + step) : null,
+                onPressed: widget.enabled ? () => _set(widget.value + 1) : null,
                 icon: const Icon(Icons.arrow_drop_up),
               ),
               IconButton(
                 iconSize: 18,
                 color: Colors.white54,
-                onPressed: enabled ? () => _set(value - step) : null,
+                onPressed: widget.enabled ? () => _set(widget.value - 1) : null,
                 icon: const Icon(Icons.arrow_drop_down),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────
-//  送信キー選択
-// ─────────────────────────────────────────
-class _KeySelector extends StatelessWidget {
-  final String value;
-  final bool enabled;
-  final ValueChanged<String> onChanged;
-
-  const _KeySelector({
-    required this.value,
-    required this.onChanged,
-    this.enabled = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: enabled ? 1.0 : 0.4,
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text('送信キー', style: TextStyle(color: Colors.white54)),
-          ),
-          DropdownButton<String>(
-            value: value,
-            dropdownColor: const Color(0xFF2A2A2A),
-            style: const TextStyle(color: Colors.white70),
-            onChanged: enabled
-                ? (v) {
-                    if (v != null) onChanged(v);
-                  }
-                : null,
-            items: _availableKeys
-                .map((k) => DropdownMenuItem(value: k, child: Text(k)))
-                .toList(),
           ),
         ],
       ),
