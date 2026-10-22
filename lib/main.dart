@@ -79,11 +79,19 @@ const _fixedSendKey = 'Left';
 // ─────────────────────────────────────────
 Future<void> runCaptureSequence({
   required int repeat,
+  int startDelaySec = 0,
   required bool Function() isCancelled,
   VoidCallback? onHide,
   VoidCallback? onShow,
   void Function(int index)? onShot,
 }) async {
+  // 開始までの待機（停止ボタンで中断できるよう短い間隔で確認）
+  final deadline = DateTime.now().add(Duration(seconds: startDelaySec));
+  while (DateTime.now().isBefore(deadline)) {
+    if (isCancelled()) return;
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
+
   for (var i = 0; i < repeat; i++) {
     if (isCancelled()) return;
 
@@ -133,6 +141,7 @@ class CaptureScreen extends StatefulWidget {
 
 class _CaptureScreenState extends State<CaptureScreen> {
   int _repeat = 100;
+  int _startDelaySec = 3;
 
   bool _running = false;
   bool _cancelRequested = false;
@@ -155,6 +164,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
     await runCaptureSequence(
       repeat: _repeat,
+      startDelaySec: _startDelaySec,
       isCancelled: () => _cancelRequested,
       onHide: _hide,
       onShow: _show,
@@ -193,6 +203,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 min: 1,
                 enabled: !_running,
                 onChanged: (v) => setState(() => _repeat = v),
+              ),
+              const SizedBox(height: 8),
+              _NumberStepper(
+                label: '開始までの秒数',
+                value: _startDelaySec,
+                enabled: !_running,
+                onChanged: (v) => setState(() => _startDelaySec = v),
               ),
               const SizedBox(height: 16),
               Row(
