@@ -85,11 +85,18 @@ Future<void> runCaptureSequence({
   VoidCallback? onShow,
   void Function(int index)? onShot,
 }) async {
-  // 開始までの待機（停止ボタンで中断できるよう短い間隔で確認）
-  final deadline = DateTime.now().add(Duration(seconds: startDelaySec));
-  while (DateTime.now().isBefore(deadline)) {
-    if (isCancelled()) return;
-    await Future.delayed(const Duration(milliseconds: 100));
+  // 開始までの待機。kiriを隠して撮影対象を操作できるようにする
+  // （停止ボタンで中断できるよう短い間隔で確認）
+  if (startDelaySec > 0) {
+    onHide?.call();
+    final deadline = DateTime.now().add(Duration(seconds: startDelaySec));
+    while (DateTime.now().isBefore(deadline)) {
+      if (isCancelled()) {
+        onShow?.call();
+        return;
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
   }
 
   for (var i = 0; i < repeat; i++) {
