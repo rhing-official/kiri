@@ -49,3 +49,6 @@ app.*.map.json
 
 # Obsidian vault symlink (personal notes, machine-specific path)
 /企画書.md
+
+# Claude Code project skills (local only)
+/.claude/skills/
