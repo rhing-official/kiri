@@ -52,3 +52,7 @@ app.*.map.json
 
 # Claude Code project skills (local only)
 /.claude/skills/
+
+# 日記・実装内容チェックリスト（個人メモ。公開しない）
+/文書/
+/CLAUDE.md
