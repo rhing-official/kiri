@@ -30,6 +30,11 @@ chmod +x kiri-x86_64.AppImage
 - `gnome-screenshot`（スクリーンショット取得）
 - `ydotool` / `ydotoold`（キー送信。初回起動時にデーモンが自動起動します）
 
+## iPad（モバイル）で撮影する
+
+「モバイル」モードでは、ESP32 を BLE キーボードにして、iPad のスクリーンショットとページ送りを自動で行います（撮った画像は iPad の写真アプリに保存されます）。
+ESP32 ボードの用意と、ファームウェアの書き込み・ペアリングの手順は [tools/esp32_keyboard/README.md](tools/esp32_keyboard/README.md) を参照してください。
+
 ## 開発者向け
 
 ```bash
